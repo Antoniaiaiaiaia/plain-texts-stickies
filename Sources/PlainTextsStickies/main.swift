@@ -202,6 +202,7 @@ final class NoteWindow: NSWindow, NSWindowDelegate {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var states: [NoteState] = []
     private var windows: [UUID: NoteWindow] = [:]
+    private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -222,15 +223,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isTerminating = true
+        return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        isTerminating = true
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         newNote()
         return true
-    }
-
-    func applicationDidBecomeActive(_ notification: Notification) {
-        if !windows.values.contains(where: { $0.isVisible }) {
-            newNote()
-        }
     }
 
     @objc private func newNote() {
@@ -257,9 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateState(id: id, text: text, frame: frame, fontSize: fontSize)
             },
             onClose: { [weak self] id in
-                DispatchQueue.main.async {
-                    self?.windows[id] = nil
-                }
+                self?.handleWindowClose(id)
             }
         )
         windows[state.id] = window
@@ -291,13 +293,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func removeNote(_ id: UUID) {
         windows[id]?.close()
-        states.removeAll { $0.id == id }
+    }
 
-        if states.isEmpty {
-            states = [newState()]
-            openWindow(states[0]).focusText()
+    private func handleWindowClose(_ id: UUID) {
+        DispatchQueue.main.async { [weak self] in
+            self?.windows[id] = nil
         }
+        guard !isTerminating else { return }
 
+        states.removeAll { $0.id == id }
         saveStates()
     }
 
